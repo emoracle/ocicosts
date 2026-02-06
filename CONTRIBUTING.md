@@ -1,25 +1,25 @@
 # Contributing
 
-Bedankt voor je interesse om bij te dragen.
+Thanks for your interest in contributing.
 
 ## Development
 
-- Installeer dependencies:
+- Install dependencies:
   - `npm install`
-- Run lokaal:
+- Run locally:
   - `node src/showcosts.js`
 
 ## Code style
 
-- Houd de code in `src/` modulair en klein.
-- Schrijf duidelijke foutmeldingen voor CLI-gebruikers.
+- Keep code in `src/` modular and small.
+- Provide clear error messages for CLI users.
 
 ## Pull requests
 
-- Beschrijf het probleem en de oplossing in je PR.
-- Voeg een korte testbeschrijving toe (handmatig is prima).
+- Describe the problem and the solution in your PR.
+- Add a short test note (manual is fine).
 
 ## Issues
 
-- Vermeld relevante OCI details (tenancy, regio, gebruikte API).
-- Voeg voorbeeldoutput toe waar mogelijk.
+- Include relevant OCI details (tenancy, region, APIs used).
+- Add sample output when possible.
