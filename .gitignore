@@ -1,0 +1,12 @@
+node_modules/
+package-lock.json
+.cache/
+.env
+npm-debug.log*
+.DS_Store
+.vscode/
+.idea/
+*.log
+
+# OCI config (optioneel)
+.oci/

@@ -1,0 +1,16 @@
+{
+  "name": "oci-cost-overview",
+  "version": "0.1.0",
+  "description": "OCI cost overview CLI",
+  "main": "src/showcosts.js",
+  "type": "commonjs",
+  "scripts": {
+    "start": "node src/showcosts.js",
+    "test": "node src/showcosts.js --refresh-cache"
+  },
+  "dependencies": {
+    "oci-common": "^2.0.0",
+    "oci-usageapi": "^2.0.0",
+    "oci-resourcesearch": "^2.0.0"
+  }
+}

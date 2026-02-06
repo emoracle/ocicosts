@@ -1,0 +1,10 @@
+{
+  "days": 30,
+  "top": 30,
+  "granularity": "DAILY",
+  "compartmentDepth": 6,
+  "csv": false,
+  "csvFile": "",
+  "cachePath": ".cache/displayname.json",
+  "cacheTtlDays": 7
+}
