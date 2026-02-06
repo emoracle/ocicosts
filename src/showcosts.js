@@ -14,6 +14,7 @@ const {
   createSearchClient,
   fetchUsageItems,
   fetchDisplayName,
+  fetchResourceDetails,
 } = require("./modules/oci");
 const { toIso, withConcurrency } = require("./modules/util");
 
@@ -21,6 +22,44 @@ function isObjectStorageService(service) {
   if (!service) return false;
   const s = String(service).toLowerCase();
   return s.includes("object storage") || s.includes("objectstorage");
+}
+
+function formatTags(item) {
+  if (!item) return "";
+  const parts = [];
+
+  if (item.freeformTags && typeof item.freeformTags === "object") {
+    for (const [k, v] of Object.entries(item.freeformTags)) {
+      parts.push(`${k}=${v}`);
+    }
+  }
+
+  if (item.definedTags && typeof item.definedTags === "object") {
+    for (const [ns, tags] of Object.entries(item.definedTags)) {
+      if (tags && typeof tags === "object") {
+        for (const [k, v] of Object.entries(tags)) {
+          parts.push(`${ns}.${k}=${v}`);
+        }
+      }
+    }
+  }
+
+  if (item.tags && typeof item.tags === "string") {
+    parts.push(item.tags);
+  }
+
+  if (item.tag && typeof item.tag === "string") {
+    parts.push(item.tag);
+  }
+
+  return parts.join(", ");
+}
+
+function tagMatches(tagString, wanted) {
+  if (!wanted) return true;
+  if (!tagString) return false;
+  const tokens = tagString.split(",").map((t) => t.trim()).filter(Boolean);
+  return tokens.includes(wanted);
 }
 
 async function main() {
@@ -63,24 +102,58 @@ async function main() {
     } catch {}
   }
 
-  const displayNameMap = loadCache(args.cachePath, args.cacheTtlDays);
+  const useTags = !!(args.tag && String(args.tag).trim());
+  const wantedTag = useTags ? String(args.tag).trim() : "";
+
+  const cache = loadCache(args.cachePath, args.cacheTtlDays);
+  const displayNameMap = cache.nameMap;
+  const tagMap = cache.tagMap;
 
   const toFetch = uniqueResourceIds.filter(
-    (ocid) => !displayNameMap.has(ocid) || !displayNameMap.get(ocid)
+    (ocid) =>
+      !displayNameMap.has(ocid) ||
+      (useTags && !tagMap.has(ocid))
   );
   await withConcurrency(toFetch, 5, async (ocid) => {
     try {
-      const name = await fetchDisplayName(searchClient, ocid);
-      displayNameMap.set(ocid, name);
+      if (useTags) {
+        const details = await fetchResourceDetails(searchClient, ocid);
+        displayNameMap.set(ocid, details.displayName);
+        tagMap.set(ocid, {
+          freeformTags: details.freeformTags || null,
+          definedTags: details.definedTags || null,
+        });
+      } else {
+        const name = await fetchDisplayName(searchClient, ocid);
+        displayNameMap.set(ocid, name);
+      }
     } catch {
       displayNameMap.set(ocid, null);
+      if (useTags) {
+        tagMap.set(ocid, "");
+      }
     }
   });
 
-  saveCache(args.cachePath, displayNameMap);
+  const tagStringMap = new Map();
+  if (useTags) {
+    for (const [ocid, tagObj] of tagMap.entries()) {
+      if (typeof tagObj === "string") {
+        tagStringMap.set(ocid, tagObj);
+      } else {
+        tagStringMap.set(ocid, formatTags(tagObj));
+      }
+    }
+    saveCache(args.cachePath, displayNameMap, tagStringMap);
+  } else {
+    saveCache(args.cachePath, displayNameMap, tagMap);
+  }
 
   const rows = items
     .map((i) => {
+      const tags =
+        (useTags && i.resourceId && tagStringMap.get(i.resourceId)) ||
+        (useTags ? formatTags(i) : "");
       const nameFromSearch = i.resourceId ? displayNameMap.get(i.resourceId) : null;
       const displayName =
         i.resourceName ||
@@ -93,8 +166,10 @@ async function main() {
         currency: i.currency || "",
         service: i.service || "",
         displayName,
+        tags,
       };
     })
+    .filter((r) => (useTags ? tagMatches(r.tags, wantedTag) : true))
     .sort((a, b) => b.amount - a.amount)
     .slice(0, Number.isFinite(args.top) && args.top > 0 ? args.top : undefined)
     .map((r) => ({
@@ -158,7 +233,7 @@ async function main() {
       writeCsv(serviceTotalsRows, process.stdout, null, "Total per service");
     }
     if (!args.csv && args.csvFile) {
-      console.log(`CSV geschreven naar ${args.csvFile}`);
+      console.log(`CSV written to ${args.csvFile}`);
     }
     return;
   }
@@ -171,6 +246,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  console.error("Fout:", err?.message || err);
+  console.error("Error:", err?.message || err);
   process.exit(1);
 });

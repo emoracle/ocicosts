@@ -53,6 +53,14 @@ function extractBestName(item) {
   );
 }
 
+function extractTags(item) {
+  if (!item) return { freeformTags: null, definedTags: null };
+  return {
+    freeformTags: item.freeformTags || null,
+    definedTags: item.definedTags || null,
+  };
+}
+
 async function fetchDisplayName(searchClient, ocid) {
   const query = `query all resources where identifier = '${ocid}'`;
   const searchDetails = { type: "Structured", query };
@@ -69,10 +77,31 @@ async function fetchDisplayName(searchClient, ocid) {
   return extractBestName(items[0]);
 }
 
+async function fetchResourceDetails(searchClient, ocid) {
+  const query = `query all resources where identifier = '${ocid}'`;
+  const searchDetails = { type: "Structured", query };
+  const response = await searchClient.searchResources({ searchDetails });
+
+  const collection =
+    response.resourceSummaryCollection ||
+    response.resourceSummaryCollectionSummary ||
+    response.data ||
+    response;
+
+  const items = collection.items || [];
+  if (items.length === 0) return { displayName: null, freeformTags: null, definedTags: null };
+  const item = items[0];
+  return {
+    displayName: extractBestName(item),
+    ...extractTags(item),
+  };
+}
+
 module.exports = {
   createProvider,
   createUsageClient,
   createSearchClient,
   fetchUsageItems,
   fetchDisplayName,
+  fetchResourceDetails,
 };

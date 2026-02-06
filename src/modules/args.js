@@ -26,6 +26,7 @@ function parseArgs(argv, settingsPath) {
     cachePath: ".cache/displayname.json",
     cacheTtlDays: 7,
     refreshCache: false,
+    tag: "",
   };
 
   const settings = settingsPath ? loadSettings(settingsPath) : {};
@@ -45,6 +46,7 @@ function parseArgs(argv, settingsPath) {
     else if (a === "--csv-file") args.csvFile = next();
     else if (a === "--cache-ttl-days") args.cacheTtlDays = Number(next());
     else if (a === "--refresh-cache") args.refreshCache = true;
+    else if (a === "--tag") args.tag = next() || "";
     else if (a === "--help" || a === "-h") {
       return { args, help: true };
     }
@@ -78,6 +80,7 @@ Options:
   --csv-file <path>       Write CSV to file
   --cache-ttl-days <n>    Cache TTL in days (default 7)
   --refresh-cache         Clear and rebuild cache
+  --tag <k=v>             Filter services by tag (skip tag lookup if empty)
 `);
 }
 
