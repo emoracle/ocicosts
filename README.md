@@ -22,6 +22,7 @@ node src/showcosts.js --start 2026-02-01 --end 2026-02-06
 node src/showcosts.js --config ~/.oci/config
 node src/showcosts.js --top 30
 node src/showcosts.js --tag "Namespace.Key=Value"
+node src/showcosts.js --tag "A=B,C=D"
 node src/showcosts.js --csv
 node src/showcosts.js --csv-file /tmp/costs.csv
 node src/showcosts.js --cache-ttl-days 14
@@ -36,6 +37,7 @@ node src/showcosts.js --refresh-cache
 - Settings live in `config/settings.json`. CLI arguments override these settings.
 - Output shows the period (including the Top N label) and the columns: Cost, DisplayName, Service.
 - A total row is shown and is calculated over all services (not just the Top N list).
-- A separate block shows totals per service.
-- If `--tag` is provided, only services with that tag are shown; tag lookup is skipped when `--tag` is empty.
+- A separate block shows totals per service (also over all services).
+- If `--tag` is provided, only services with that tag are shown in the main list. Tag lookup is skipped when `--tag` is empty. Multiple tags are supported via comma separation.
+- The tool expects EUR only; if a non‑EUR currency is detected it will error out.
 - The displayName cache is a simple JSON file with a TTL (default 7 days).

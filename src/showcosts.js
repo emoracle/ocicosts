@@ -59,7 +59,8 @@ function tagMatches(tagString, wanted) {
   if (!wanted) return true;
   if (!tagString) return false;
   const tokens = tagString.split(",").map((t) => t.trim()).filter(Boolean);
-  return tokens.includes(wanted);
+  const wantedTokens = wanted.split(",").map((t) => t.trim()).filter(Boolean);
+  return wantedTokens.every((w) => tokens.includes(w));
 }
 
 async function main() {
@@ -91,6 +92,17 @@ async function main() {
   };
 
   const items = await fetchUsageItems(usageClient, requestDetails);
+
+  const currencies = new Set(
+    items.map((i) => (i.currency ? String(i.currency).toUpperCase() : ""))
+  );
+  currencies.delete("");
+  const nonEur = Array.from(currencies).filter((c) => c !== "EUR");
+  if (nonEur.length > 0) {
+    throw new Error(
+      `Non-EUR currency detected: ${nonEur.join(", ")}. Expected EUR only.`
+    );
+  }
 
   const uniqueResourceIds = Array.from(
     new Set(items.map((i) => i.resourceId).filter((x) => x))
@@ -177,6 +189,10 @@ async function main() {
       displayName: r.displayName,
       service: r.service,
     }));
+
+  if (useTags && rows.length === 0) {
+    console.warn(`Warning: no results match tag ${wantedTag}.`);
+  }
 
   if (rows.length === 0) {
     console.log("No results for this period.");
