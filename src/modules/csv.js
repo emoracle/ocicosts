@@ -11,30 +11,57 @@ function csvEscape(value) {
 }
 
 function writeCsv(rows, stream, periodLine, sectionLabel) {
+  const includeTags = rows.some((r) =>
+    Object.prototype.hasOwnProperty.call(r, "tags")
+  );
   if (periodLine) {
     stream.write(`# ${periodLine}\n`);
   }
   if (sectionLabel) {
     stream.write(`# ${sectionLabel}\n`);
   }
-  const headers = ["Cost", "DisplayName", "Service"];
+  const headers = includeTags
+    ? ["Cost", "DisplayName", "Service", "Tags"]
+    : ["Cost", "DisplayName", "Service"];
   stream.write(headers.map(csvEscape).join(",") + "\n");
   for (const r of rows) {
-    const line = [r.kosten, r.displayName, r.service];
+    const line = includeTags
+      ? [r.kosten, r.displayName, r.service, r.tags || ""]
+      : [r.kosten, r.displayName, r.service];
     stream.write(line.map(csvEscape).join(",") + "\n");
   }
 }
 
+function buildCsv(rows, periodLine, sectionLabel) {
+  const includeTags = rows.some((r) =>
+    Object.prototype.hasOwnProperty.call(r, "tags")
+  );
+  const lines = [];
+  if (periodLine) {
+    lines.push(`# ${periodLine}`);
+  }
+  if (sectionLabel) {
+    lines.push(`# ${sectionLabel}`);
+  }
+  const headers = includeTags
+    ? ["Cost", "DisplayName", "Service", "Tags"]
+    : ["Cost", "DisplayName", "Service"];
+  lines.push(headers.map(csvEscape).join(","));
+  for (const r of rows) {
+    const line = includeTags
+      ? [r.kosten, r.displayName, r.service, r.tags || ""]
+      : [r.kosten, r.displayName, r.service];
+    lines.push(line.map(csvEscape).join(","));
+  }
+  return lines.join("\n") + "\n";
+}
+
 function writeCsvFile(rows, filePath, periodLine, sectionLabel) {
-  const stream = fs.createWriteStream(filePath, { encoding: "utf8" });
-  writeCsv(rows, stream, periodLine, sectionLabel);
-  stream.end();
+  fs.writeFileSync(filePath, buildCsv(rows, periodLine, sectionLabel), "utf8");
 }
 
 function writeCsvAppend(rows, filePath, sectionLabel) {
-  const stream = fs.createWriteStream(filePath, { encoding: "utf8", flags: "a" });
-  writeCsv(rows, stream, null, sectionLabel);
-  stream.end();
+  fs.appendFileSync(filePath, buildCsv(rows, null, sectionLabel), "utf8");
 }
 
 module.exports = { writeCsv, writeCsvFile, writeCsvAppend };

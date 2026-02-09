@@ -33,8 +33,11 @@ function computeRange(args) {
 function parseInputDate(value, isEnd) {
   const s = String(value).trim();
   if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
-    const time = isEnd ? "23:59:59.999" : "00:00:00.000";
-    return new Date(`${s}T${time}Z`);
+    const base = new Date(`${s}T00:00:00.000Z`);
+    if (isEnd) {
+      return new Date(base.getTime() + 24 * 60 * 60 * 1000);
+    }
+    return base;
   }
   return new Date(ensureUtc(s));
 }

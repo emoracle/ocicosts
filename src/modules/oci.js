@@ -3,6 +3,7 @@
 const common = require("oci-common");
 const usageapi = require("oci-usageapi");
 const resourcesearch = require("oci-resourcesearch");
+const { execFile } = require("child_process");
 
 function createProvider(args) {
   return new common.ConfigFileAuthenticationDetailsProvider(
@@ -54,10 +55,90 @@ function extractBestName(item) {
 }
 
 function extractTags(item) {
-  if (!item) return { freeformTags: null, definedTags: null };
+  if (!item) return { freeformTags: null, definedTags: null, systemTags: null };
+  const details = item.additionalDetails || {};
   return {
-    freeformTags: item.freeformTags || null,
-    definedTags: item.definedTags || null,
+    freeformTags: item.freeformTags || details.freeformTags || null,
+    definedTags: item.definedTags || details.definedTags || null,
+    systemTags: item.systemTags || details.systemTags || null,
+  };
+}
+
+function extractBucketContext(item) {
+  const details = (item && item.additionalDetails) || {};
+  return {
+    bucketName:
+      details.bucketName ||
+      details.bucket ||
+      item.displayName ||
+      item.resourceName ||
+      null,
+    namespaceName: details.namespaceName || details.namespace || null,
+  };
+}
+
+function runOciCli(args) {
+  return new Promise((resolve, reject) => {
+    execFile("oci", args, { encoding: "utf8" }, (err, stdout, stderr) => {
+      if (err) {
+        err.stderr = stderr;
+        reject(err);
+        return;
+      }
+      resolve(stdout);
+    });
+  });
+}
+
+function appendCommonCliArgs(args, commonArgs) {
+  if (commonArgs && commonArgs.configFile) {
+    args.push("--config-file", commonArgs.configFile);
+  }
+  if (commonArgs && commonArgs.profile) {
+    args.push("--profile", commonArgs.profile);
+  }
+  return args;
+}
+
+function parseBucketIdentifier(bucketName, namespaceName) {
+  const rawBucket = bucketName ? String(bucketName).trim() : "";
+  const rawNamespace = namespaceName ? String(namespaceName).trim() : "";
+  if (!rawBucket) return { bucketName: null, namespaceName: rawNamespace || null };
+
+  if (!rawNamespace && rawBucket.includes("/")) {
+    const [maybeNamespace, ...rest] = rawBucket.split("/");
+    const bucket = rest.join("/").trim();
+    if (maybeNamespace && bucket) {
+      return { bucketName: bucket, namespaceName: maybeNamespace.trim() };
+    }
+  }
+
+  return { bucketName: rawBucket, namespaceName: rawNamespace || null };
+}
+
+async function fetchObjectStorageNamespace(commonArgs) {
+  const args = appendCommonCliArgs(["os", "ns", "get"], commonArgs);
+  const raw = await runOciCli(args);
+  const parsed = JSON.parse(raw);
+  return (parsed && parsed.data ? String(parsed.data) : "").trim() || null;
+}
+
+async function fetchBucketTagsFromCli(commonArgs, bucketName, namespaceName) {
+  const bucketRef = parseBucketIdentifier(bucketName, namespaceName);
+  if (!bucketRef.bucketName) return { freeformTags: null, definedTags: null, systemTags: null };
+  const ns = bucketRef.namespaceName || (await fetchObjectStorageNamespace(commonArgs));
+  if (!ns) return { freeformTags: null, definedTags: null, systemTags: null };
+  const args = appendCommonCliArgs(
+    ["os", "bucket", "get", "--namespace-name", ns, "--name", bucketRef.bucketName],
+    commonArgs
+  );
+  const raw = await runOciCli(args);
+  const parsedJson = JSON.parse(raw);
+  const data = parsedJson && parsedJson.data ? parsedJson.data : {};
+  return {
+    freeformTags: data["freeform-tags"] || null,
+    definedTags: data["defined-tags"] || null,
+    systemTags: data["system-tags"] || null,
   };
 }
 
@@ -89,11 +170,21 @@ async function fetchResourceDetails(searchClient, ocid) {
     response;
 
   const items = collection.items || [];
-  if (items.length === 0) return { displayName: null, freeformTags: null, definedTags: null };
+  if (items.length === 0) {
+    return {
+      displayName: null,
+      freeformTags: null,
+      definedTags: null,
+      systemTags: null,
+      bucketName: null,
+      namespaceName: null,
+    };
+  }
   const item = items[0];
   return {
     displayName: extractBestName(item),
     ...extractTags(item),
+    ...extractBucketContext(item),
   };
 }
 
@@ -104,4 +195,5 @@ module.exports = {
   fetchUsageItems,
   fetchDisplayName,
   fetchResourceDetails,
+  fetchBucketTagsFromCli,
 };

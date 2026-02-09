@@ -11,8 +11,17 @@ function formatMoney(amount, currency) {
 }
 
 function renderTable(rows) {
-  const headers = ["Cost", "DisplayName", "Service"];
-  const lines = rows.map((r) => [r.kosten, r.displayName, r.service]);
+  const includeTags = rows.some((r) =>
+    Object.prototype.hasOwnProperty.call(r, "tags")
+  );
+  const headers = includeTags
+    ? ["Cost", "DisplayName", "Service", "Tags"]
+    : ["Cost", "DisplayName", "Service"];
+  const lines = rows.map((r) =>
+    includeTags
+      ? [r.kosten, r.displayName, r.service, r.tags || ""]
+      : [r.kosten, r.displayName, r.service]
+  );
 
   const widths = headers.map((h, idx) =>
     Math.max(h.length, ...lines.map((l) => String(l[idx]).length))

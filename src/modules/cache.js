@@ -21,7 +21,7 @@ function loadCache(cachePath, ttlDays) {
       }
 
       if (Object.prototype.hasOwnProperty.call(entry, "tags")) {
-        tagMap.set(ocid, entry.tags || "");
+        tagMap.set(ocid, entry.tags);
       }
     }
   } catch {
@@ -39,11 +39,14 @@ function saveCache(cachePath, nameMap, tagMap) {
   const ts = Date.now();
   const keys = new Set([...nameMap.keys(), ...tagMap.keys()]);
   for (const ocid of keys) {
-    obj[ocid] = {
+    const entry = {
       name: nameMap.get(ocid) || null,
-      tags: tagMap.has(ocid) ? tagMap.get(ocid) : "",
       ts,
     };
+    if (tagMap.has(ocid)) {
+      entry.tags = tagMap.get(ocid);
+    }
+    obj[ocid] = entry;
   }
   fs.writeFileSync(cachePath, JSON.stringify(obj, null, 2));
 }

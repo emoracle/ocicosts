@@ -27,6 +27,7 @@ function parseArgs(argv, settingsPath) {
     cacheTtlDays: 7,
     refreshCache: false,
     tag: "",
+    showTags: false,
   };
 
   const settings = settingsPath ? loadSettings(settingsPath) : {};
@@ -47,6 +48,7 @@ function parseArgs(argv, settingsPath) {
     else if (a === "--cache-ttl-days") args.cacheTtlDays = Number(next());
     else if (a === "--refresh-cache") args.refreshCache = true;
     else if (a === "--tag") args.tag = next() || "";
+    else if (a === "--showtags") args.showTags = true;
     else if (a === "--help" || a === "-h") {
       return { args, help: true };
     }
@@ -81,6 +83,7 @@ Options:
   --cache-ttl-days <n>    Cache TTL in days (default 7)
   --refresh-cache         Clear and rebuild cache
   --tag <k=v>             Filter services by tag (skip tag lookup if empty)
+  --showtags              Show tags column in the top details section
 `);
 }
 

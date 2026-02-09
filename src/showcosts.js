@@ -15,8 +15,11 @@ const {
   fetchUsageItems,
   fetchDisplayName,
   fetchResourceDetails,
+  fetchBucketTagsFromCli,
 } = require("./modules/oci");
 const { toIso, withConcurrency } = require("./modules/util");
+
+const NO_TAGS = "__NO_TAGS__";
 
 function isObjectStorageService(service) {
   if (!service) return false;
@@ -27,10 +30,18 @@ function isObjectStorageService(service) {
 function formatTags(item) {
   if (!item) return "";
   const parts = [];
+  const addTag = (k, v, ns) => {
+    const key = k === undefined || k === null ? "" : String(k).trim();
+    const val = v === undefined || v === null ? "" : String(v).trim();
+    const prefix = ns ? `${String(ns).trim()}.` : "";
+    if (key && val) parts.push(`${prefix}${key}=${val}`);
+    else if (key) parts.push(`${prefix}${key}`);
+    else if (val) parts.push(val);
+  };
 
   if (item.freeformTags && typeof item.freeformTags === "object") {
     for (const [k, v] of Object.entries(item.freeformTags)) {
-      parts.push(`${k}=${v}`);
+      addTag(k, v);
     }
   }
 
@@ -38,29 +49,102 @@ function formatTags(item) {
     for (const [ns, tags] of Object.entries(item.definedTags)) {
       if (tags && typeof tags === "object") {
         for (const [k, v] of Object.entries(tags)) {
-          parts.push(`${ns}.${k}=${v}`);
+          addTag(k, v, ns);
         }
       }
     }
   }
 
-  if (item.tags && typeof item.tags === "string") {
+  if (item.systemTags && typeof item.systemTags === "object") {
+    for (const [ns, tags] of Object.entries(item.systemTags)) {
+      if (tags && typeof tags === "object") {
+        for (const [k, v] of Object.entries(tags)) {
+          addTag(k, v, ns);
+        }
+      }
+    }
+  }
+
+  if (Array.isArray(item.tags)) {
+    for (const t of item.tags) {
+      if (!t) continue;
+      if (typeof t === "string") {
+        parts.push(t);
+        continue;
+      }
+      if (typeof t === "object") {
+        const key = t.key ?? t.name;
+        addTag(key, t.value, t.namespace);
+      }
+    }
+  } else if (item.tags && typeof item.tags === "object") {
+    for (const [k, v] of Object.entries(item.tags)) {
+      addTag(k, v);
+    }
+  } else if (item.tags && typeof item.tags === "string") {
     parts.push(item.tags);
   }
 
-  if (item.tag && typeof item.tag === "string") {
+  if (Array.isArray(item.tag)) {
+    for (const t of item.tag) {
+      if (!t) continue;
+      if (typeof t === "string") parts.push(t);
+      else if (typeof t === "object") addTag(t.key ?? t.name, t.value, t.namespace);
+    }
+  } else if (item.tag && typeof item.tag === "object") {
+    for (const [k, v] of Object.entries(item.tag)) {
+      addTag(k, v);
+    }
+  } else if (item.tag && typeof item.tag === "string") {
     parts.push(item.tag);
   }
 
-  return parts.join(", ");
+  const details = item.additionalDetails;
+  if (details && typeof details === "object") {
+    if (details.freeformTags && typeof details.freeformTags === "object") {
+      for (const [k, v] of Object.entries(details.freeformTags)) addTag(k, v);
+    }
+    if (details.definedTags && typeof details.definedTags === "object") {
+      for (const [ns, tags] of Object.entries(details.definedTags)) {
+        if (tags && typeof tags === "object") {
+          for (const [k, v] of Object.entries(tags)) addTag(k, v, ns);
+        }
+      }
+    }
+    if (details.systemTags && typeof details.systemTags === "object") {
+      for (const [ns, tags] of Object.entries(details.systemTags)) {
+        if (tags && typeof tags === "object") {
+          for (const [k, v] of Object.entries(tags)) addTag(k, v, ns);
+        }
+      }
+    }
+    if (details.tags !== undefined) {
+      parts.push(formatTags({ tags: details.tags }));
+    }
+    if (details.tag !== undefined) {
+      parts.push(formatTags({ tag: details.tag }));
+    }
+  }
+
+  return Array.from(new Set(parts.filter(Boolean))).join(", ");
 }
 
 function tagMatches(tagString, wanted) {
   if (!wanted) return true;
+  const normalizedWanted = String(wanted).trim().toLowerCase();
+  if (normalizedWanted === "notags" || normalizedWanted === "no-tags") {
+    return !tagString || !String(tagString).trim();
+  }
   if (!tagString) return false;
   const tokens = tagString.split(",").map((t) => t.trim()).filter(Boolean);
   const wantedTokens = wanted.split(",").map((t) => t.trim()).filter(Boolean);
   return wantedTokens.every((w) => tokens.includes(w));
+}
+
+function hasTagData(tagsObj) {
+  if (!tagsObj || typeof tagsObj !== "object") return false;
+  const blocks = [tagsObj.freeformTags, tagsObj.definedTags, tagsObj.systemTags];
+  return blocks.some((block) => block && typeof block === "object" && Object.keys(block).length > 0);
 }
 
 async function main() {
@@ -93,20 +177,50 @@ async function main() {
 
   const items = await fetchUsageItems(usageClient, requestDetails);
 
-  const currencies = new Set(
-    items.map((i) => (i.currency ? String(i.currency).toUpperCase() : ""))
-  );
-  currencies.delete("");
-  const nonEur = Array.from(currencies).filter((c) => c !== "EUR");
-  if (nonEur.length > 0) {
-    throw new Error(
-      `Non-EUR currency detected: ${nonEur.join(", ")}. Expected EUR only.`
+  const currencyIssues = new Map();
+  for (const i of items) {
+    const normalizedCurrency = i.currency ? String(i.currency).trim().toUpperCase() : "EUR";
+    if (normalizedCurrency === "EUR") continue;
+    const currencyKey = normalizedCurrency;
+    if (!currencyIssues.has(currencyKey)) {
+      currencyIssues.set(currencyKey, {
+        count: 0,
+        services: new Map(),
+      });
+    }
+    const issue = currencyIssues.get(currencyKey);
+    issue.count += 1;
+    const service = i.service || "(unknown service)";
+    issue.services.set(service, (issue.services.get(service) || 0) + 1);
+  }
+
+  if (currencyIssues.size > 0) {
+    const details = Array.from(currencyIssues.entries()).map(([currency, info]) => {
+      const topServices = Array.from(info.services.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 3)
+        .map(([svc, count]) => `${svc} (${count})`)
+        .join(", ");
+      return `${currency}: ${info.count} row(s)` + (topServices ? ` [services: ${topServices}]` : "");
+    });
+    console.warn(
+      `Warning: non-EUR currency detected; continuing anyway. ${details.join(" | ")}`
     );
   }
 
   const uniqueResourceIds = Array.from(
     new Set(items.map((i) => i.resourceId).filter((x) => x))
   );
+  const resourceInfoById = new Map();
+  for (const i of items) {
+    if (!i.resourceId) continue;
+    if (!resourceInfoById.has(i.resourceId)) {
+      resourceInfoById.set(i.resourceId, {
+        service: i.service || "",
+        resourceName: i.resourceName || i.resourceId || "",
+      });
+    }
+  }
 
   if (args.refreshCache) {
     try {
@@ -114,8 +228,10 @@ async function main() {
     } catch {}
   }
 
-  const useTags = !!(args.tag && String(args.tag).trim());
-  const wantedTag = useTags ? String(args.tag).trim() : "";
+  const showTags = !!args.showTags;
+  const useTagFilter = !!(args.tag && String(args.tag).trim());
+  const needTagData = showTags || useTagFilter;
+  const wantedTag = useTagFilter ? String(args.tag).trim() : "";
 
   const cache = loadCache(args.cachePath, args.cacheTtlDays);
   const displayNameMap = cache.nameMap;
@@ -124,48 +240,69 @@ async function main() {
   const toFetch = uniqueResourceIds.filter(
     (ocid) =>
       !displayNameMap.has(ocid) ||
-      (useTags && !tagMap.has(ocid))
+      (needTagData &&
+        (!tagMap.has(ocid) || tagMap.get(ocid) === "" || tagMap.get(ocid) === null))
   );
   await withConcurrency(toFetch, 5, async (ocid) => {
+    const resourceInfo = resourceInfoById.get(ocid) || {};
     try {
-      if (useTags) {
+      if (needTagData) {
         const details = await fetchResourceDetails(searchClient, ocid);
-        displayNameMap.set(ocid, details.displayName);
-        tagMap.set(ocid, {
+        displayNameMap.set(ocid, details.displayName || resourceInfo.resourceName || null);
+        let tagDetails = {
           freeformTags: details.freeformTags || null,
           definedTags: details.definedTags || null,
-        });
+          systemTags: details.systemTags || null,
+        };
+
+        if (isObjectStorageService(resourceInfo.service) && !hasTagData(tagDetails)) {
+          try {
+            const bucketTags = await fetchBucketTagsFromCli(
+              { configFile: args.configFile, profile: args.profile },
+              details.bucketName || details.displayName || resourceInfo.resourceName,
+              details.namespaceName
+            );
+            if (hasTagData(bucketTags)) {
+              tagDetails = bucketTags;
+            }
+          } catch {
+            // Ignore CLI fallback errors and keep existing tag details.
+          }
+        }
+
+        tagMap.set(ocid, tagDetails);
       } else {
         const name = await fetchDisplayName(searchClient, ocid);
         displayNameMap.set(ocid, name);
       }
     } catch {
       displayNameMap.set(ocid, null);
-      if (useTags) {
+      if (needTagData) {
         tagMap.set(ocid, "");
       }
     }
   });
 
   const tagStringMap = new Map();
-  if (useTags) {
+  if (needTagData) {
     for (const [ocid, tagObj] of tagMap.entries()) {
-      if (typeof tagObj === "string") {
-        tagStringMap.set(ocid, tagObj);
-      } else {
-        tagStringMap.set(ocid, formatTags(tagObj));
-      }
+      const formatted =
+        typeof tagObj === "string" || tagObj === null ? tagObj : formatTags(tagObj);
+      tagStringMap.set(ocid, formatted === "" || formatted === null ? NO_TAGS : formatted);
     }
     saveCache(args.cachePath, displayNameMap, tagStringMap);
   } else {
     saveCache(args.cachePath, displayNameMap, tagMap);
   }
 
-  const rows = items
+  const detailedRows = items
     .map((i) => {
       const tags =
-        (useTags && i.resourceId && tagStringMap.get(i.resourceId)) ||
-        (useTags ? formatTags(i) : "");
+        (needTagData &&
+          i.resourceId &&
+          tagStringMap.get(i.resourceId) !== NO_TAGS &&
+          tagStringMap.get(i.resourceId)) ||
+        (needTagData ? formatTags(i) : "");
       const nameFromSearch = i.resourceId ? displayNameMap.get(i.resourceId) : null;
       const displayName =
         i.resourceName ||
@@ -181,20 +318,28 @@ async function main() {
         tags,
       };
     })
-    .filter((r) => (useTags ? tagMatches(r.tags, wantedTag) : true))
+    .filter((r) => (useTagFilter ? tagMatches(r.tags, wantedTag) : true));
+
+  const rows = detailedRows
     .sort((a, b) => b.amount - a.amount)
     .slice(0, Number.isFinite(args.top) && args.top > 0 ? args.top : undefined)
-    .map((r) => ({
-      kosten: formatMoney(r.amount, r.currency),
-      displayName: r.displayName,
-      service: r.service,
-    }));
+    .map((r) => {
+      const row = {
+        kosten: formatMoney(r.amount, r.currency),
+        displayName: r.displayName,
+        service: r.service,
+      };
+      if (showTags) {
+        row.tags = r.tags || "";
+      }
+      return row;
+    });
 
-  if (useTags && rows.length === 0) {
+  if (useTagFilter && detailedRows.length === 0) {
     console.warn(`Warning: no results match tag ${wantedTag}.`);
   }
 
-  if (rows.length === 0) {
+  if (detailedRows.length === 0) {
     console.log("No results for this period.");
     return;
   }
@@ -211,6 +356,7 @@ async function main() {
   }
 
   const totalRows = Array.from(totalsByCurrency.entries())
+    .filter(([, amount]) => amount !== 0)
     .sort((a, b) => b[1] - a[1])
     .map(([currency, amount]) => ({
       kosten: formatMoney(amount, currency),
@@ -218,7 +364,30 @@ async function main() {
       service: "",
     }));
 
-  const rowsWithTotal = rows.concat(totalRows);
+  const filteredTotalsByCurrency = new Map();
+  for (const r of detailedRows) {
+    filteredTotalsByCurrency.set(
+      r.currency,
+      (filteredTotalsByCurrency.get(r.currency) || 0) + r.amount
+    );
+  }
+
+  const filteredTotalRows = useTagFilter
+    ? Array.from(filteredTotalsByCurrency.entries())
+        .filter(([, amount]) => amount !== 0)
+        .sort((a, b) => b[1] - a[1])
+        .map(([currency, amount]) => ({
+          kosten: formatMoney(amount, currency),
+          displayName: (() => {
+            const allAmount = totalsByCurrency.get(currency) || 0;
+            const pct = allAmount !== 0 ? (amount / allAmount) * 100 : 0;
+            return `Total (filtered services, not just Top N) (${pct.toFixed(2)}%)`;
+          })(),
+          service: "",
+        }))
+    : [];
+
+  const rowsWithTotal = rows.concat(filteredTotalRows, totalRows);
   const totalsByService = new Map();
   for (const [key, amount] of totalsByServiceCurrency.entries()) {
     const [service] = key.split("|||");
@@ -226,6 +395,7 @@ async function main() {
   }
 
   const serviceTotalsRows = Array.from(totalsByService.entries())
+    .filter(([, amount]) => amount !== 0)
     .map(([service, amount]) => ({
       amount,
       kosten: formatMoney(amount, "EUR"),
