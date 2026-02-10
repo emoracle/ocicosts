@@ -20,6 +20,7 @@ const {
 const { toIso, withConcurrency } = require("./modules/util");
 
 const NO_TAGS = "__NO_TAGS__";
+const DEFAULT_CURRENCY = "EUR";
 
 function isObjectStorageService(service) {
   if (!service) return false;
@@ -147,6 +148,11 @@ function hasTagData(tagsObj) {
   return blocks.some((block) => block && typeof block === "object" && Object.keys(block).length > 0);
 }
 
+function normalizeCurrency(currency) {
+  const normalized = currency ? String(currency).trim().toUpperCase() : "";
+  return normalized || DEFAULT_CURRENCY;
+}
+
 async function main() {
   const settingsPath = path.resolve(__dirname, "../config/settings.json");
   const { args, help } = parseArgs(process.argv.slice(2), settingsPath);
@@ -179,8 +185,8 @@ async function main() {
 
   const currencyIssues = new Map();
   for (const i of items) {
-    const normalizedCurrency = i.currency ? String(i.currency).trim().toUpperCase() : "EUR";
-    if (normalizedCurrency === "EUR") continue;
+    const normalizedCurrency = normalizeCurrency(i.currency);
+    if (normalizedCurrency === DEFAULT_CURRENCY) continue;
     const currencyKey = normalizedCurrency;
     if (!currencyIssues.has(currencyKey)) {
       currencyIssues.set(currencyKey, {
@@ -312,7 +318,7 @@ async function main() {
           : "(name not found)");
       return {
         amount: Number(i.computedAmount || 0),
-        currency: i.currency || "",
+        currency: normalizeCurrency(i.currency),
         service: i.service || "",
         displayName,
         tags,
@@ -347,7 +353,7 @@ async function main() {
   const totalsByCurrency = new Map();
   const totalsByServiceCurrency = new Map();
   for (const i of items) {
-    const currency = i.currency || "";
+    const currency = normalizeCurrency(i.currency);
     const amount = Number(i.computedAmount || 0);
     totalsByCurrency.set(currency, (totalsByCurrency.get(currency) || 0) + amount);
     const service = i.service || "(unknown)";
@@ -398,7 +404,7 @@ async function main() {
     .filter(([, amount]) => amount !== 0)
     .map(([service, amount]) => ({
       amount,
-      kosten: formatMoney(amount, "EUR"),
+      kosten: formatMoney(amount, DEFAULT_CURRENCY),
       displayName: "",
       service,
     }))

@@ -68,7 +68,7 @@ function parseArgs(argv, settingsPath) {
 
 function printHelp() {
   console.log(`
-Usage: node index.js [opts]
+Usage: node showcosts.js [opts]
 
 Options:
   --days <n>              Number of days back (default 30)
