@@ -5,6 +5,13 @@ const usageapi = require("oci-usageapi");
 const resourcesearch = require("oci-resourcesearch");
 const { execFile } = require("child_process");
 
+const CLI_MAX_CONCURRENCY = 1;
+const CLI_MAX_ATTEMPTS = 3;
+
+let activeCliCalls = 0;
+const cliQueue = [];
+const namespacePromiseByProfile = new Map();
+
 function createProvider(args) {
   return new common.ConfigFileAuthenticationDetailsProvider(
     args.configFile,
@@ -77,17 +84,77 @@ function extractBucketContext(item) {
   };
 }
 
-function runOciCli(args) {
+function runWithCliConcurrency(task) {
   return new Promise((resolve, reject) => {
-    execFile("oci", args, { encoding: "utf8" }, (err, stdout, stderr) => {
-      if (err) {
-        err.stderr = stderr;
-        reject(err);
-        return;
-      }
-      resolve(stdout);
-    });
+    const start = () => {
+      activeCliCalls += 1;
+      Promise.resolve()
+        .then(task)
+        .then(resolve, reject)
+        .finally(() => {
+          activeCliCalls -= 1;
+          const next = cliQueue.shift();
+          if (next) next();
+        });
+    };
+
+    if (activeCliCalls < CLI_MAX_CONCURRENCY) {
+      start();
+    } else {
+      cliQueue.push(start);
+    }
   });
+}
+
+function runOciCli(args) {
+  return runWithCliConcurrency(
+    () =>
+      new Promise((resolve, reject) => {
+        execFile("oci", args, { encoding: "utf8" }, (err, stdout, stderr) => {
+          if (err) {
+            err.stderr = stderr;
+            reject(err);
+            return;
+          }
+          resolve(stdout);
+        });
+      })
+  );
+}
+
+function isRetryableCliError(error) {
+  const text = `${(error && error.message) || ""} ${(error && error.stderr) || ""}`.toLowerCase();
+  return (
+    text.includes("too many requests") ||
+    text.includes("rate") ||
+    text.includes("throttl") ||
+    text.includes("timeout") ||
+    text.includes("timed out") ||
+    text.includes("temporar") ||
+    text.includes("connection reset") ||
+    text.includes("try again")
+  );
+}
+
+function sleep(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function runOciCliWithRetry(args, maxAttempts = CLI_MAX_ATTEMPTS) {
+  let lastError;
+  for (let attempt = 1; attempt <= maxAttempts; attempt += 1) {
+    try {
+      return await runOciCli(args);
+    } catch (error) {
+      lastError = error;
+      const shouldRetry = attempt < maxAttempts && isRetryableCliError(error);
+      if (!shouldRetry) {
+        throw error;
+      }
+      await sleep(attempt * 200);
+    }
+  }
+  throw lastError;
 }
 
 function appendCommonCliArgs(args, commonArgs) {
@@ -116,11 +183,33 @@ function parseBucketIdentifier(bucketName, namespaceName) {
   return { bucketName: rawBucket, namespaceName: rawNamespace || null };
 }
 
+function getNamespaceCacheKey(commonArgs) {
+  const configFile = commonArgs && commonArgs.configFile ? String(commonArgs.configFile) : "";
+  const profile = commonArgs && commonArgs.profile ? String(commonArgs.profile) : "";
+  return `${configFile}::${profile}`;
+}
+
 async function fetchObjectStorageNamespace(commonArgs) {
-  const args = appendCommonCliArgs(["os", "ns", "get"], commonArgs);
-  const raw = await runOciCli(args);
-  const parsed = JSON.parse(raw);
-  return (parsed && parsed.data ? String(parsed.data) : "").trim() || null;
+  const key = getNamespaceCacheKey(commonArgs);
+  if (namespacePromiseByProfile.has(key)) {
+    return namespacePromiseByProfile.get(key);
+  }
+
+  const namespacePromise = (async () => {
+    const args = appendCommonCliArgs(["os", "ns", "get"], commonArgs);
+    const raw = await runOciCliWithRetry(args);
+    const parsed = JSON.parse(raw);
+    return (parsed && parsed.data ? String(parsed.data) : "").trim() || null;
+  })();
+
+  namespacePromiseByProfile.set(key, namespacePromise);
+
+  try {
+    return await namespacePromise;
+  } catch (error) {
+    namespacePromiseByProfile.delete(key);
+    throw error;
+  }
 }
 
 async function fetchBucketTagsFromCli(commonArgs, bucketName, namespaceName) {
@@ -128,11 +217,12 @@ async function fetchBucketTagsFromCli(commonArgs, bucketName, namespaceName) {
   if (!bucketRef.bucketName) return { freeformTags: null, definedTags: null, systemTags: null };
   const ns = bucketRef.namespaceName || (await fetchObjectStorageNamespace(commonArgs));
   if (!ns) return { freeformTags: null, definedTags: null, systemTags: null };
+
   const args = appendCommonCliArgs(
     ["os", "bucket", "get", "--namespace-name", ns, "--name", bucketRef.bucketName],
     commonArgs
   );
-  const raw = await runOciCli(args);
+  const raw = await runOciCliWithRetry(args);
   const parsedJson = JSON.parse(raw);
   const data = parsedJson && parsedJson.data ? parsedJson.data : {};
   return {

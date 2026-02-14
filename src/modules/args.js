@@ -33,26 +33,37 @@ function parseArgs(argv, settingsPath) {
   const settings = settingsPath ? loadSettings(settingsPath) : {};
   const args = { ...defaults, ...settings };
 
-  for (let i = 0; i < argv.length; i++) {
-    const a = argv[i];
-    const next = () => (i + 1 < argv.length ? argv[++i] : undefined);
-    if (a === "--days") args.days = Number(next());
-    else if (a === "--top") args.top = Number(next());
-    else if (a === "--granularity") args.granularity = next();
-    else if (a === "--config") args.configFile = next();
-    else if (a === "--compartment-depth") args.compartmentDepth = Number(next());
-    else if (a === "--start") args.start = next();
-    else if (a === "--end") args.end = next();
+  const readValue = (currentArg, indexRef) => {
+    const value = indexRef.i + 1 < argv.length ? argv[indexRef.i + 1] : undefined;
+    if (value === undefined || (typeof value === "string" && value.startsWith("--"))) {
+      throw new Error(`Missing value for argument: ${currentArg}`);
+    }
+    indexRef.i += 1;
+    return value;
+  };
+
+  for (const indexRef = { i: 0 }; indexRef.i < argv.length; indexRef.i += 1) {
+    const a = argv[indexRef.i];
+    if (a === "--days") args.days = Number(readValue(a, indexRef));
+    else if (a === "--top") args.top = Number(readValue(a, indexRef));
+    else if (a === "--granularity") args.granularity = readValue(a, indexRef);
+    else if (a === "--config") args.configFile = readValue(a, indexRef);
+    else if (a === "--compartment-depth") args.compartmentDepth = Number(readValue(a, indexRef));
+    else if (a === "--start") args.start = readValue(a, indexRef);
+    else if (a === "--end") args.end = readValue(a, indexRef);
     else if (a === "--csv") args.csv = true;
-    else if (a === "--csv-file") args.csvFile = next();
-    else if (a === "--cache-ttl-days") args.cacheTtlDays = Number(next());
+    else if (a === "--csv-file") args.csvFile = readValue(a, indexRef);
+    else if (a === "--cache-ttl-days") args.cacheTtlDays = Number(readValue(a, indexRef));
     else if (a === "--refresh-cache") args.refreshCache = true;
-    else if (a === "--tag") args.tag = next() || "";
+    else if (a === "--tag") args.tag = readValue(a, indexRef) || "";
     else if (a === "--showtags") args.showTags = true;
     else if (a === "--help" || a === "-h") {
       return { args, help: true };
+    } else {
+      throw new Error(`Unsupported argument: ${a}`);
     }
   }
+
   const resolved = { ...args };
   if (resolved.csvFile && typeof resolved.csvFile === "string") {
     resolved.csvFile = path.resolve(process.cwd(), resolved.csvFile);

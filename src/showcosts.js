@@ -155,7 +155,15 @@ function normalizeCurrency(currency) {
 
 async function main() {
   const settingsPath = path.resolve(__dirname, "../config/settings.json");
-  const { args, help } = parseArgs(process.argv.slice(2), settingsPath);
+  let args;
+  let help;
+  try {
+    ({ args, help } = parseArgs(process.argv.slice(2), settingsPath));
+  } catch (error) {
+    console.error(error && error.message ? error.message : String(error));
+    printHelp();
+    process.exit(1);
+  }
   if (help) {
     printHelp();
     process.exit(0);
@@ -243,12 +251,27 @@ async function main() {
   const displayNameMap = cache.nameMap;
   const tagMap = cache.tagMap;
 
-  const toFetch = uniqueResourceIds.filter(
-    (ocid) =>
-      !displayNameMap.has(ocid) ||
-      (needTagData &&
-        (!tagMap.has(ocid) || tagMap.get(ocid) === "" || tagMap.get(ocid) === null))
-  );
+  const toFetch = uniqueResourceIds.filter((ocid) => {
+    if (!displayNameMap.has(ocid)) {
+      return true;
+    }
+
+    if (!needTagData) {
+      return false;
+    }
+
+    const cachedTag = tagMap.has(ocid) ? tagMap.get(ocid) : undefined;
+    if (cachedTag === undefined || cachedTag === "" || cachedTag === null) {
+      return true;
+    }
+
+    const resourceInfo = resourceInfoById.get(ocid) || {};
+    if (cachedTag === NO_TAGS && isObjectStorageService(resourceInfo.service)) {
+      return true;
+    }
+
+    return false;
+  });
   await withConcurrency(toFetch, 5, async (ocid) => {
     const resourceInfo = resourceInfoById.get(ocid) || {};
     try {
