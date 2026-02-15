@@ -12,20 +12,34 @@ const {
   createProvider,
   createUsageClient,
   createSearchClient,
+  createLoadBalancerClient,
   fetchUsageItems,
   fetchDisplayName,
   fetchResourceDetails,
   fetchBucketTagsFromCli,
+  fetchLoadBalancerDisplayName,
 } = require("./modules/oci");
 const { toIso, withConcurrency } = require("./modules/util");
 
 const NO_TAGS = "__NO_TAGS__";
 const DEFAULT_CURRENCY = "EUR";
+const DISPLAY_NAME_MAX_LEN = 100;
 
 function isObjectStorageService(service) {
   if (!service) return false;
   const s = String(service).toLowerCase();
   return s.includes("object storage") || s.includes("objectstorage");
+}
+
+function isLoadBalancerService(service) {
+  if (!service) return false;
+  const s = String(service).toLowerCase();
+  return s.includes("load balancer");
+}
+
+function isLoadBalancerOcid(ocid) {
+  if (!ocid) return false;
+  return String(ocid).startsWith("ocid1.loadbalancer.");
 }
 
 function formatTags(item) {
@@ -153,6 +167,14 @@ function normalizeCurrency(currency) {
   return normalized || DEFAULT_CURRENCY;
 }
 
+function truncateDisplayName(value) {
+  const text = value === undefined || value === null ? "" : String(value);
+  if (text.length <= DISPLAY_NAME_MAX_LEN) {
+    return text;
+  }
+  return `${text.slice(0, DISPLAY_NAME_MAX_LEN)}...`;
+}
+
 async function main() {
   const settingsPath = path.resolve(__dirname, "../config/settings.json");
   let args;
@@ -175,6 +197,7 @@ async function main() {
   const tenantId = provider.getTenantId();
   const usageClient = createUsageClient(provider);
   const searchClient = createSearchClient(provider);
+  const loadBalancerClient = createLoadBalancerClient(provider);
 
   const groupBy = ["resourceId", "service", "compartmentName"];
 
@@ -299,10 +322,37 @@ async function main() {
           }
         }
 
+        if (
+          !details.displayName &&
+          isLoadBalancerService(resourceInfo.service) &&
+          isLoadBalancerOcid(ocid)
+        ) {
+          try {
+            const lbName = await fetchLoadBalancerDisplayName(loadBalancerClient, ocid);
+            if (lbName) {
+              displayNameMap.set(ocid, lbName);
+            }
+          } catch {
+            // Keep existing fallback name resolution path.
+          }
+        }
+
         tagMap.set(ocid, tagDetails);
       } else {
         const name = await fetchDisplayName(searchClient, ocid);
-        displayNameMap.set(ocid, name);
+        let resolvedName = name;
+        if (
+          !resolvedName &&
+          isLoadBalancerService(resourceInfo.service) &&
+          isLoadBalancerOcid(ocid)
+        ) {
+          try {
+            resolvedName = await fetchLoadBalancerDisplayName(loadBalancerClient, ocid);
+          } catch {
+            // Keep existing fallback name resolution path.
+          }
+        }
+        displayNameMap.set(ocid, resolvedName);
       }
     } catch {
       displayNameMap.set(ocid, null);
@@ -343,7 +393,7 @@ async function main() {
         amount: Number(i.computedAmount || 0),
         currency: normalizeCurrency(i.currency),
         service: i.service || "",
-        displayName,
+        displayName: truncateDisplayName(displayName),
         tags,
       };
     })

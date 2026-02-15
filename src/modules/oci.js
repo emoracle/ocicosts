@@ -1,6 +1,7 @@
 "use strict";
 
 const common = require("oci-common");
+const loadbalancer = require("oci-loadbalancer");
 const usageapi = require("oci-usageapi");
 const resourcesearch = require("oci-resourcesearch");
 const { execFile } = require("child_process");
@@ -25,6 +26,12 @@ function createUsageClient(provider) {
 
 function createSearchClient(provider) {
   return new resourcesearch.ResourceSearchClient({
+    authenticationDetailsProvider: provider,
+  });
+}
+
+function createLoadBalancerClient(provider) {
+  return new loadbalancer.LoadBalancerClient({
     authenticationDetailsProvider: provider,
   });
 }
@@ -217,7 +224,6 @@ async function fetchBucketTagsFromCli(commonArgs, bucketName, namespaceName) {
   if (!bucketRef.bucketName) return { freeformTags: null, definedTags: null, systemTags: null };
   const ns = bucketRef.namespaceName || (await fetchObjectStorageNamespace(commonArgs));
   if (!ns) return { freeformTags: null, definedTags: null, systemTags: null };
-
   const args = appendCommonCliArgs(
     ["os", "bucket", "get", "--namespace-name", ns, "--name", bucketRef.bucketName],
     commonArgs
@@ -230,6 +236,14 @@ async function fetchBucketTagsFromCli(commonArgs, bucketName, namespaceName) {
     definedTags: data["defined-tags"] || null,
     systemTags: data["system-tags"] || null,
   };
+}
+
+async function fetchLoadBalancerDisplayName(loadBalancerClient, loadBalancerId) {
+  if (!loadBalancerId) return null;
+  const response = await loadBalancerClient.getLoadBalancer({ loadBalancerId });
+  const data = response && response.loadBalancer ? response.loadBalancer : response.data;
+  if (!data) return null;
+  return data.displayName || data.name || null;
 }
 
 async function fetchDisplayName(searchClient, ocid) {
@@ -282,8 +296,10 @@ module.exports = {
   createProvider,
   createUsageClient,
   createSearchClient,
+  createLoadBalancerClient,
   fetchUsageItems,
   fetchDisplayName,
   fetchResourceDetails,
   fetchBucketTagsFromCli,
+  fetchLoadBalancerDisplayName,
 };

@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "oci-common": "^2.0.0",
+    "oci-loadbalancer": "^2.0.0",
     "oci-usageapi": "^2.0.0",
     "oci-resourcesearch": "^2.0.0"
   }
