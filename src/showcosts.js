@@ -42,6 +42,27 @@ function isLoadBalancerOcid(ocid) {
   return String(ocid).startsWith("ocid1.loadbalancer.");
 }
 
+function inferServiceName(service, displayName, resourceId) {
+  const original = service || "";
+  const serviceLower = String(original).toLowerCase();
+  const id = resourceId ? String(resourceId).toLowerCase() : "";
+  const name = displayName ? String(displayName).trim() : "";
+
+  const looksLikeContainerRepoName =
+    /^[a-z0-9][a-z0-9._-]*(\/[a-z0-9][a-z0-9._-]*)+$/i.test(name);
+  const isContainerRepoOcid =
+    id.startsWith("ocid1.containerrepo.") || id.startsWith("ocid1.containerimage.");
+
+  if (
+    isContainerRepoOcid ||
+    (serviceLower.includes("compute") && looksLikeContainerRepoName)
+  ) {
+    return "Container Registry";
+  }
+
+  return original;
+}
+
 function formatTags(item) {
   if (!item) return "";
   const parts = [];
@@ -392,7 +413,7 @@ async function main() {
       return {
         amount: Number(i.computedAmount || 0),
         currency: normalizeCurrency(i.currency),
-        service: i.service || "",
+        service: inferServiceName(i.service || "", displayName, i.resourceId),
         displayName: truncateDisplayName(displayName),
         tags,
       };
