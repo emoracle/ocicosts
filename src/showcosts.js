@@ -401,7 +401,14 @@ async function main() {
 
   const rows = detailedRows
     .sort((a, b) => b.amount - a.amount)
-    .slice(0, Number.isFinite(args.top) && args.top > 0 ? args.top : undefined)
+    .slice(
+      0,
+      useTagFilter
+        ? undefined
+        : Number.isFinite(args.top) && args.top > 0
+          ? args.top
+          : undefined
+    )
     .map((r) => {
       const row = {
         kosten: formatMoney(r.amount, r.currency),
