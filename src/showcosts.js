@@ -294,6 +294,7 @@ async function main() {
   const cache = loadCache(args.cachePath, args.cacheTtlDays);
   const displayNameMap = cache.nameMap;
   const tagMap = cache.tagMap;
+  const deletedResourceIds = new Set();
 
   const toFetch = uniqueResourceIds.filter((ocid) => {
     if (!displayNameMap.has(ocid)) {
@@ -321,6 +322,11 @@ async function main() {
     try {
       if (needTagData) {
         const details = await fetchResourceDetails(searchClient, ocid);
+        if (!details.displayName) {
+          deletedResourceIds.add(ocid);
+        } else {
+          deletedResourceIds.delete(ocid);
+        }
         displayNameMap.set(ocid, details.displayName || resourceInfo.resourceName || null);
         let tagDetails = {
           freeformTags: details.freeformTags || null,
@@ -361,6 +367,11 @@ async function main() {
         tagMap.set(ocid, tagDetails);
       } else {
         const name = await fetchDisplayName(searchClient, ocid);
+        if (!name) {
+          deletedResourceIds.add(ocid);
+        } else {
+          deletedResourceIds.delete(ocid);
+        }
         let resolvedName = name;
         if (
           !resolvedName &&
@@ -410,14 +421,19 @@ async function main() {
         (isObjectStorageService(i.service) && i.resourceId
           ? i.resourceId
           : "(name not found)");
+      const displayNameWithStatus =
+        i.resourceId && deletedResourceIds.has(i.resourceId)
+          ? `${displayName} (deleted)`
+          : displayName;
       return {
         amount: Number(i.computedAmount || 0),
         currency: normalizeCurrency(i.currency),
-        service: inferServiceName(i.service || "", displayName, i.resourceId),
-        displayName: truncateDisplayName(displayName),
+        service: inferServiceName(i.service || "", displayNameWithStatus, i.resourceId),
+        displayName: truncateDisplayName(displayNameWithStatus),
         tags,
       };
     })
+    .filter((r) => r.amount !== 0)
     .filter((r) => (useTagFilter ? tagMatches(r.tags, wantedTag) : true));
 
   const rows = detailedRows
