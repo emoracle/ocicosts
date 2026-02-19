@@ -177,6 +177,14 @@ function tagMatches(tagString, wanted) {
   return wantedTokens.every((w) => tokens.includes(w));
 }
 
+function serviceMatches(serviceName, wantedService) {
+  if (!wantedService) return true;
+  const service = String(serviceName || "").trim().toLowerCase();
+  const wanted = String(wantedService || "").trim().toLowerCase();
+  if (!wanted) return true;
+  return service.includes(wanted);
+}
+
 function hasTagData(tagsObj) {
   if (!tagsObj || typeof tagsObj !== "object") return false;
   const blocks = [tagsObj.freeformTags, tagsObj.definedTags, tagsObj.systemTags];
@@ -288,8 +296,11 @@ async function main() {
 
   const showTags = !!args.showTags;
   const useTagFilter = !!(args.tag && String(args.tag).trim());
+  const useServiceFilter = !!(args.service && String(args.service).trim());
+  const useSelectionFilter = useTagFilter || useServiceFilter;
   const needTagData = showTags || useTagFilter;
   const wantedTag = useTagFilter ? String(args.tag).trim() : "";
+  const wantedService = useServiceFilter ? String(args.service).trim() : "";
 
   const cache = loadCache(args.cachePath, args.cacheTtlDays);
   const displayNameMap = cache.nameMap;
@@ -434,7 +445,8 @@ async function main() {
       };
     })
     .filter((r) => r.amount !== 0)
-    .filter((r) => (useTagFilter ? tagMatches(r.tags, wantedTag) : true));
+    .filter((r) => (useTagFilter ? tagMatches(r.tags, wantedTag) : true))
+    .filter((r) => (useServiceFilter ? serviceMatches(r.service, wantedService) : true));
 
   const rows = detailedRows
     .sort((a, b) => b.amount - a.amount)
@@ -460,6 +472,9 @@ async function main() {
 
   if (useTagFilter && detailedRows.length === 0) {
     console.warn(`Warning: no results match tag ${wantedTag}.`);
+  }
+  if (useServiceFilter && detailedRows.length === 0) {
+    console.warn(`Warning: no results match service ${wantedService}.`);
   }
 
   if (detailedRows.length === 0) {
@@ -495,7 +510,7 @@ async function main() {
     );
   }
 
-  const filteredTotalRows = useTagFilter
+  const filteredTotalRows = useSelectionFilter
     ? Array.from(filteredTotalsByCurrency.entries())
         .filter(([, amount]) => amount !== 0)
         .sort((a, b) => b[1] - a[1])
@@ -504,7 +519,7 @@ async function main() {
           displayName: (() => {
             const allAmount = totalsByCurrency.get(currency) || 0;
             const pct = allAmount !== 0 ? (amount / allAmount) * 100 : 0;
-            return `Total (filtered services, not just Top N) (${pct.toFixed(2)}%)`;
+            return `Total (filtered selection, not just Top N) (${pct.toFixed(2)}%)`;
           })(),
           service: "",
         }))

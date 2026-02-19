@@ -59,13 +59,18 @@ node src/showcosts.js --top 30
 node src/showcosts.js --tag "Namespace.Key=Value"
 node src/showcosts.js --tag "A=B,C=D"
 node src/showcosts.js --tag notags
+node src/showcosts.js --service "Load Balancer"
 node src/showcosts.js --showtags
 node src/showcosts.js --showtags --tag "A=B"
+node src/showcosts.js --showtags --service "Object Storage"
 node src/showcosts.js --csv
 node src/showcosts.js --csv-file /tmp/costs.csv
 node src/showcosts.js --cache-ttl-days 14
 node src/showcosts.js --refresh-cache
 ```
+
+Service choices for `--service`:
+`Compute`, `Load Balancer`, `Object Storage`, `Block Storage`, `Container Registry`, `Database`, `Networking`
 
 ## Notes
 
@@ -76,12 +81,15 @@ node src/showcosts.js --refresh-cache
 - Output shows the period (including the Top N label) and the columns: Cost, DisplayName, Service.
 - With `--showtags`, the top details section includes an extra `Tags` column.
 - A total row is shown and is calculated over all services (not just the Top N list).
-- If `--tag` is used, an extra total row for filtered services is shown before the all-services total, including the percentage versus the all-services total.
+- If `--tag` or `--service` is used, an extra total row for the filtered selection is shown before the all-services total, including the percentage versus the all-services total.
 - A separate block shows totals per service (also over all services), excluding services where total cost is `0`.
 - If `--tag` is provided, only services with that tag are shown in the main list. Tag lookup is skipped when `--tag` is empty. Multiple tags are supported via comma separation.
+- If `--service` is provided, only rows matching that service name are shown (case-insensitive).
 - Use `--tag notags` (or `--tag no-tags`) to show only services/resources without tags.
+- If `--tag` or `--service` is used, Top N limiting is not applied to the filtered detail rows.
 - For Object Storage, if Resource Search does not return tags, the tool falls back to `oci os bucket get` to read bucket tags.
 - For date-only input (`YYYY-MM-DD`), `--start` is inclusive at `00:00:00Z` and `--end` is treated as exclusive at the next UTC midnight.
 - Missing currency values are treated as EUR.
 - If a non‑EUR currency is detected, the tool prints a warning (including where it appears) and continues.
+- Resources that cannot be found via Resource Search are marked as `(deleted)` in the display name.
 - The displayName cache is a simple JSON file with a TTL (default 7 days).

@@ -3,6 +3,16 @@
 const fs = require("fs");
 const path = require("path");
 
+const SERVICE_CHOICES = [
+  "Compute",
+  "Load Balancer",
+  "Object Storage",
+  "Block Storage",
+  "Container Registry",
+  "Database",
+  "Networking",
+];
+
 function loadSettings(settingsPath) {
   try {
     const raw = fs.readFileSync(settingsPath, "utf8");
@@ -27,6 +37,7 @@ function parseArgs(argv, settingsPath) {
     cacheTtlDays: 7,
     refreshCache: false,
     tag: "",
+    service: "",
     showTags: false,
   };
 
@@ -56,6 +67,7 @@ function parseArgs(argv, settingsPath) {
     else if (a === "--cache-ttl-days") args.cacheTtlDays = Number(readValue(a, indexRef));
     else if (a === "--refresh-cache") args.refreshCache = true;
     else if (a === "--tag") args.tag = readValue(a, indexRef) || "";
+    else if (a === "--service") args.service = readValue(a, indexRef) || "";
     else if (a === "--showtags") args.showTags = true;
     else if (a === "--help" || a === "-h") {
       return { args, help: true };
@@ -94,8 +106,12 @@ Options:
   --cache-ttl-days <n>    Cache TTL in days (default 7)
   --refresh-cache         Clear and rebuild cache
   --tag <k=v>             Filter services by tag (skip tag lookup if empty)
+  --service <name>        Filter by service name (case-insensitive)
   --showtags              Show tags column in the top details section
+
+Service choices:
+  ${SERVICE_CHOICES.join(", ")}
 `);
 }
 
-module.exports = { parseArgs, printHelp, loadSettings };
+module.exports = { parseArgs, printHelp, loadSettings, SERVICE_CHOICES };
