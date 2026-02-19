@@ -276,6 +276,7 @@ async function fetchResourceDetails(searchClient, ocid) {
   const items = collection.items || [];
   if (items.length === 0) {
     return {
+      found: false,
       displayName: null,
       freeformTags: null,
       definedTags: null,
@@ -286,6 +287,7 @@ async function fetchResourceDetails(searchClient, ocid) {
   }
   const item = items[0];
   return {
+    found: true,
     displayName: extractBestName(item),
     ...extractTags(item),
     ...extractBucketContext(item),

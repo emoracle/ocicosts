@@ -361,6 +361,7 @@ async function main() {
         }
 
         if (
+          details.found &&
           !details.displayName &&
           isLoadBalancerService(resourceInfo.service) &&
           isLoadBalancerOcid(ocid)
@@ -390,7 +391,12 @@ async function main() {
           isLoadBalancerOcid(ocid)
         ) {
           try {
-            resolvedName = await fetchLoadBalancerDisplayName(loadBalancerClient, ocid);
+            const details = await fetchResourceDetails(searchClient, ocid);
+            if (details.found) {
+              resolvedName = await fetchLoadBalancerDisplayName(loadBalancerClient, ocid);
+            } else {
+              deletedResourceIds.add(ocid);
+            }
           } catch {
             // Keep existing fallback name resolution path.
           }
