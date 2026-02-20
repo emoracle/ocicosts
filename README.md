@@ -46,53 +46,82 @@ Allow group <group-name> to read buckets in tenancy
 ## Usage
 
 ```bash
-node src/showcosts.js
+./showcosts.sh
 ```
 
-Options:
+### Arguments
+
+- `--cache-ttl-days <n>`: Cache TTL in days for display name/tag lookups.
+- `--config <path>`: OCI config file path (instead of `~/.oci/config`).
+- `--csv`: Print output as CSV to stdout.
+- `--csv-file <path>`: Write CSV output to a file.
+- `--days <n>`: Relative lookback window in days (used when no `--start/--end` are provided).
+- `--end <ISO>`: End datetime (`RFC3339` or `YYYY-MM-DD`).
+- `--refresh-cache`: Clear cache before loading data.
+- `--service "<name>"`: Filter rows by service name (case-insensitive).
+- `--showtags`: Add `Tags` column to the detail output.
+- `--start <ISO>`: Start datetime (`RFC3339` or `YYYY-MM-DD`).
+- `--tag "<selector>"`: Filter by tags. Supports:
+  - Exact tag: `"Namespace.Key=Value"`
+  - Multiple tags (AND): `"A=B,C=D"`
+  - Untagged resources: `notags` or `no-tags`
+- `--top <n>`: Limit detail rows to top N by cost (disabled when using `--tag` or `--service`).
+
+Examples:
 
 ```bash
-node src/showcosts.js --days 30
-node src/showcosts.js --start 2026-02-01 --end 2026-02-06
-node src/showcosts.js --config ~/.oci/config
-node src/showcosts.js --top 30
-node src/showcosts.js --tag "Namespace.Key=Value"
-node src/showcosts.js --tag "A=B,C=D"
-node src/showcosts.js --tag notags
-node src/showcosts.js --service "Load Balancer"
-node src/showcosts.js --showtags
-node src/showcosts.js --showtags --tag "A=B"
-node src/showcosts.js --showtags --service "Object Storage"
-node src/showcosts.js --csv
-node src/showcosts.js --csv-file /tmp/costs.csv
-node src/showcosts.js --cache-ttl-days 14
-node src/showcosts.js --refresh-cache
+./showcosts.sh --cache-ttl-days 14
+./showcosts.sh --config ~/.oci/config
+./showcosts.sh --csv
+./showcosts.sh --csv-file /tmp/costs.csv
+./showcosts.sh --days 30
+./showcosts.sh --refresh-cache
+./showcosts.sh --service "Load Balancer"
+./showcosts.sh --showtags
+./showcosts.sh --showtags --service "Object Storage"
+./showcosts.sh --showtags --tag "A=B"
+./showcosts.sh --start 2026-02-01 --end 2026-02-06
+./showcosts.sh --tag "Namespace.Key=Value"
+./showcosts.sh --tag "A=B,C=D"
+./showcosts.sh --tag notags
+./showcosts.sh --top 30
 ```
 
-Service choices for `--service`:
-`Compute`, `Load Balancer`, `Object Storage`, `Block Storage`, `Container Registry`, `Database`, `Networking`
+Service examples for `--service`: `Compute`, `Load Balancer`, `Object Storage`, `Block Storage`, `Container Registry`, `Database`, `Networking`
 
 ## Notes
 
-- The OCI Usage API does not support `displayName` as a `groupBy` dimension. We aggregate by `resourceId` and map to a readable name via Resource Search.
-- Not every resource has a `displayName` or is discoverable via Resource Search. In that case you will see `(name not found)`. For Object Storage, the OCID is shown instead.
-- Your user/policy must be allowed to use Resource Search and read the Usage API.
-- Settings live in `config/settings.json`. CLI arguments override these settings.
-- Output shows the period (including the Top N label) and the columns: Cost, DisplayName, Service.
-- With `--showtags`, the top details section includes an extra `Tags` column.
-- A total row is shown and is calculated over all services (not just the Top N list).
-- If `--tag` or `--service` is used, an extra total row for the filtered selection is shown before the all-services total, including the percentage versus the all-services total.
-- A separate block shows totals per service (also over all services), excluding services where total cost is `0`.
-- If `--tag` is provided, only services with that tag are shown in the main list. Tag lookup is skipped when `--tag` is empty. Multiple tags are supported via comma separation.
-- If `--service` is provided, only rows matching that service name are shown (case-insensitive).
-- Use `--tag notags` (or `--tag no-tags`) to show only services/resources without tags.
-- If `--tag` or `--service` is used, Top N limiting is not applied to the filtered detail rows.
-- For Object Storage, if Resource Search does not return tags, the tool falls back to `oci os bucket get` to read bucket tags.
-- For date-only input (`YYYY-MM-DD`), `--start` is inclusive at `00:00:00Z` and `--end` is treated as exclusive at the next UTC midnight.
-- Date defaults:
-  - If only `--start` is provided, `--end` defaults to "today" (for `DAILY`: next UTC midnight).
-  - If only `--end` is provided, `--start` defaults to `January 1` of `--end`'s year (UTC).
-- Missing currency values are treated as EUR.
-- If a non‑EUR currency is detected, the tool prints a warning (including where it appears) and continues.
-- Resources that cannot be found via Resource Search are marked as `(deleted)` in the display name.
-- The displayName cache is a simple JSON file with a TTL (default 7 days).
+### Data Sources
+
+- The OCI Usage API does not support `displayName` as a `groupBy` dimension.
+- The tool aggregates by `resourceId` and resolves readable names via Resource Search.
+- If a resource cannot be found, the row is marked as `(deleted)` and name fallbacks apply.
+
+### Filters and Selection
+
+- `--tag` filters detail rows by tag values.
+- `--service` filters detail rows by service name (case-insensitive substring match).
+- `--tag notags` or `--tag no-tags` selects only untagged resources.
+- When `--tag` or `--service` is used, Top N limiting is disabled for detail rows.
+
+### Output Semantics
+
+- Detail output always includes: `Cost`, `DisplayName`, `Service`.
+- `--showtags` adds a `Tags` column to detail output.
+- A total row is always shown for all services (not just Top N).
+- When `--tag` or `--service` is used, an extra filtered total row is shown with percentage vs all-services total.
+- A separate block shows totals per service, excluding zero totals.
+
+### Date Handling
+
+- Date-only input (`YYYY-MM-DD`) is supported for `--start` and `--end`.
+- `--start` date-only is inclusive at `00:00:00Z`.
+- `--end` date-only is exclusive at next UTC midnight.
+- If only `--start` is provided, `--end` defaults to today (for `DAILY`: next UTC midnight).
+- If only `--end` is provided, `--start` defaults to `January 1` of `--end` year (UTC).
+
+### Currency and Caching
+
+- Missing currency values are treated as `EUR`.
+- If a non-`EUR` currency is detected, the tool warns and continues.
+- Display name/tag cache is stored as JSON with TTL (`--cache-ttl-days`).
