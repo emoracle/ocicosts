@@ -89,6 +89,9 @@ Service choices for `--service`:
 - If `--tag` or `--service` is used, Top N limiting is not applied to the filtered detail rows.
 - For Object Storage, if Resource Search does not return tags, the tool falls back to `oci os bucket get` to read bucket tags.
 - For date-only input (`YYYY-MM-DD`), `--start` is inclusive at `00:00:00Z` and `--end` is treated as exclusive at the next UTC midnight.
+- Date defaults:
+  - If only `--start` is provided, `--end` defaults to "today" (for `DAILY`: next UTC midnight).
+  - If only `--end` is provided, `--start` defaults to `January 1` of `--end`'s year (UTC).
 - Missing currency values are treated as EUR.
 - If a non‑EUR currency is detected, the tool prints a warning (including where it appears) and continues.
 - Resources that cannot be found via Resource Search are marked as `(deleted)` in the display name.
