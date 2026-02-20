@@ -7,8 +7,8 @@ function startOfUtcDay(d) {
 
 function computeRange(args) {
   if (args.start || args.end) {
-    const start = args.start ? parseInputDate(args.start, false) : undefined;
-    const end = args.end ? parseInputDate(args.end, true) : undefined;
+    const end = args.end ? parseInputDate(args.end, true) : defaultEnd(args);
+    const start = args.start ? parseInputDate(args.start, false) : defaultStartFromEnd(end);
     if (!start || isNaN(start.getTime())) {
       throw new Error("Invalid --start. Use RFC3339 or YYYY-MM-DD");
     }
@@ -28,6 +28,19 @@ function computeRange(args) {
   const end = now;
   const start = new Date(end.getTime() - args.days * 24 * 60 * 60 * 1000);
   return { start, end };
+}
+
+function defaultEnd(args) {
+  const now = new Date();
+  if (args.granularity === "DAILY") {
+    return new Date(startOfUtcDay(now).getTime() + 24 * 60 * 60 * 1000);
+  }
+  return now;
+}
+
+function defaultStartFromEnd(end) {
+  const d = new Date(end);
+  return new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
 }
 
 function parseInputDate(value, isEnd) {
