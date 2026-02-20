@@ -5,7 +5,8 @@
   "main": "src/showcosts.js",
   "type": "commonjs",
   "scripts": {
-    "start": "node src/showcosts.js"
+    "start": "node src/showcosts.js",
+    "test": "node --test"
   },
   "dependencies": {
     "oci-common": "^2.0.0",
