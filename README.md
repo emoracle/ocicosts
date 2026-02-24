@@ -59,6 +59,7 @@ Allow group <group-name> to read buckets in tenancy
 - `--end <ISO>`: End datetime (`RFC3339` or `YYYY-MM-DD`).
 - `--refresh-cache`: Clear cache before loading data.
 - `--service "<name>"`: Filter rows by service name (case-insensitive).
+  - Special value `oke`: include only `Compute` and `Block Storage` rows where the resource name starts with `oke-`.
 - `--showtags`: Add `Tags` column to the detail output.
 - `--start <ISO>`: Start datetime (`RFC3339` or `YYYY-MM-DD`).
 - `--tag "<selector>"`: Filter by tags. Supports:
@@ -77,6 +78,7 @@ Examples:
 ./showcosts.sh --days 30
 ./showcosts.sh --refresh-cache
 ./showcosts.sh --service "Load Balancer"
+./showcosts.sh --service oke
 ./showcosts.sh --showtags
 ./showcosts.sh --showtags --service "Object Storage"
 ./showcosts.sh --showtags --tag "A=B"
@@ -101,6 +103,7 @@ Service examples for `--service`: `Compute`, `Load Balancer`, `Object Storage`, 
 
 - `--tag` filters detail rows by tag values.
 - `--service` filters detail rows by service name (case-insensitive substring match).
+- `--service oke` applies a dedicated filter: only `Compute` and `Block Storage` resources with names starting with `oke-`.
 - `--tag notags` or `--tag no-tags` selects only untagged resources.
 - When `--tag` or `--service` is used, Top N limiting is disabled for detail rows.
 

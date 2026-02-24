@@ -20,6 +20,7 @@ const {
   fetchLoadBalancerDisplayName,
 } = require("./modules/oci");
 const { toIso, withConcurrency } = require("./modules/util");
+const { serviceMatches } = require("./modules/service-filter");
 
 const NO_TAGS = "__NO_TAGS__";
 const DEFAULT_CURRENCY = "EUR";
@@ -175,14 +176,6 @@ function tagMatches(tagString, wanted) {
   const tokens = tagString.split(",").map((t) => t.trim()).filter(Boolean);
   const wantedTokens = wanted.split(",").map((t) => t.trim()).filter(Boolean);
   return wantedTokens.every((w) => tokens.includes(w));
-}
-
-function serviceMatches(serviceName, wantedService) {
-  if (!wantedService) return true;
-  const service = String(serviceName || "").trim().toLowerCase();
-  const wanted = String(wantedService || "").trim().toLowerCase();
-  if (!wanted) return true;
-  return service.includes(wanted);
 }
 
 function hasTagData(tagsObj) {
@@ -446,13 +439,16 @@ async function main() {
         amount: Number(i.computedAmount || 0),
         currency: normalizeCurrency(i.currency),
         service: inferServiceName(i.service || "", displayNameWithStatus, i.resourceId),
+        rawDisplayName: displayName,
         displayName: truncateDisplayName(displayNameWithStatus),
         tags,
       };
     })
     .filter((r) => r.amount !== 0)
     .filter((r) => (useTagFilter ? tagMatches(r.tags, wantedTag) : true))
-    .filter((r) => (useServiceFilter ? serviceMatches(r.service, wantedService) : true));
+    .filter((r) =>
+      useServiceFilter ? serviceMatches(r.service, wantedService, r.rawDisplayName) : true
+    );
 
   const rows = detailedRows
     .sort((a, b) => b.amount - a.amount)

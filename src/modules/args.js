@@ -111,6 +111,7 @@ Options:
 
 Service choices:
   ${SERVICE_CHOICES.join(", ")}
+  Special: oke (matches Compute/Block Storage resources with names starting with "oke-")
 `);
 }
 
