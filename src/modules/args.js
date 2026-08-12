@@ -12,6 +12,38 @@ const SERVICE_CHOICES = [
   "Database",
   "Networking",
 ];
+const GRANULARITY_CHOICES = ["DAILY", "MONTHLY", "HOURLY"];
+
+function validateNumberOption(value, option, { minimum, maximum, integer = false }) {
+  if (!Number.isFinite(value)) {
+    throw new Error(`Invalid ${option}: expected a number`);
+  }
+  if (integer && !Number.isInteger(value)) {
+    throw new Error(`Invalid ${option}: expected an integer`);
+  }
+  if (value < minimum || (maximum !== undefined && value > maximum)) {
+    const range = maximum === undefined ? `${minimum} or greater` : `${minimum}-${maximum}`;
+    throw new Error(`Invalid ${option}: expected ${range}`);
+  }
+}
+
+function validateArgs(args) {
+  validateNumberOption(args.days, "--days", { minimum: 1, integer: true });
+  validateNumberOption(args.top, "--top", { minimum: 0, integer: true });
+  validateNumberOption(args.compartmentDepth, "--compartment-depth", {
+    minimum: 1,
+    maximum: 6,
+    integer: true,
+  });
+  validateNumberOption(args.cacheTtlDays, "--cache-ttl-days", { minimum: 0 });
+
+  args.granularity = String(args.granularity || "").trim().toUpperCase();
+  if (!GRANULARITY_CHOICES.includes(args.granularity)) {
+    throw new Error(
+      `Invalid --granularity: expected ${GRANULARITY_CHOICES.join(", ")}`
+    );
+  }
+}
 
 function loadSettings(settingsPath) {
   try {
@@ -76,6 +108,8 @@ function parseArgs(argv, settingsPath) {
     }
   }
 
+  validateArgs(args);
+
   const resolved = { ...args };
   if (resolved.csvFile && typeof resolved.csvFile === "string") {
     resolved.csvFile = path.resolve(process.cwd(), resolved.csvFile);
@@ -115,4 +149,10 @@ Service choices:
 `);
 }
 
-module.exports = { parseArgs, printHelp, loadSettings, SERVICE_CHOICES };
+module.exports = {
+  parseArgs,
+  printHelp,
+  loadSettings,
+  SERVICE_CHOICES,
+  GRANULARITY_CHOICES,
+};

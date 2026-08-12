@@ -51,3 +51,30 @@ test("throws on invalid --start", () => {
     /Invalid --start/
   );
 });
+
+test("rejects nonexistent calendar dates", () => {
+  assert.throws(
+    () => computeRange({ start: "2026-02-30", end: "2026-03-10", granularity: "DAILY" }),
+    /Invalid --start/
+  );
+  assert.throws(
+    () => computeRange({ start: "2026-02-01", end: "2026-02-30", granularity: "DAILY" }),
+    /Invalid --end/
+  );
+});
+
+test("rejects a range whose start is not before its exclusive end", () => {
+  assert.throws(
+    () => computeRange({ start: "2026-02-02", end: "2026-02-01", granularity: "DAILY" }),
+    /--start must be before --end/
+  );
+  assert.throws(
+    () =>
+      computeRange({
+        start: "2026-02-01T12:00:00Z",
+        end: "2026-02-01T11:00:00Z",
+        granularity: "HOURLY",
+      }),
+    /--start must be before --end/
+  );
+});

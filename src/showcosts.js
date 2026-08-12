@@ -21,6 +21,7 @@ const {
 } = require("./modules/oci");
 const { toIso, withConcurrency } = require("./modules/util");
 const { serviceMatches } = require("./modules/service-filter");
+const { selectDetailRows } = require("./modules/row-selection");
 
 const NO_TAGS = "__NO_TAGS__";
 const DEFAULT_CURRENCY = "EUR";
@@ -195,6 +196,78 @@ function truncateDisplayName(value) {
     return text;
   }
   return `${text.slice(0, DISPLAY_NAME_MAX_LEN)}...`;
+}
+
+function buildDetailedRows(items, options) {
+  const {
+    needTagData,
+    tagStringMap,
+    displayNameMap,
+    deletedResourceIds,
+    wantedTag,
+    wantedService,
+  } = options;
+  const useTagFilter = !!wantedTag;
+  const useServiceFilter = !!wantedService;
+
+  return items
+    .map((item) => {
+      const tags =
+        (needTagData &&
+          item.resourceId &&
+          tagStringMap.get(item.resourceId) !== NO_TAGS &&
+          tagStringMap.get(item.resourceId)) ||
+        (needTagData ? formatTags(item) : "");
+      const nameFromSearch = item.resourceId ? displayNameMap.get(item.resourceId) : null;
+      const displayName =
+        item.resourceName ||
+        nameFromSearch ||
+        (isObjectStorageService(item.service) && item.resourceId
+          ? item.resourceId
+          : "(name not found)");
+      const displayNameWithStatus =
+        item.resourceId && deletedResourceIds.has(item.resourceId)
+          ? `${displayName} (deleted)`
+          : displayName;
+      return {
+        amount: Number(item.computedAmount || 0),
+        currency: normalizeCurrency(item.currency),
+        service: inferServiceName(item.service || "", displayNameWithStatus, item.resourceId),
+        rawDisplayName: displayName,
+        displayName: truncateDisplayName(displayNameWithStatus),
+        tags,
+      };
+    })
+    .filter((row) => row.amount !== 0)
+    .filter((row) => (useTagFilter ? tagMatches(row.tags, wantedTag) : true))
+    .filter((row) =>
+      useServiceFilter ? serviceMatches(row.service, wantedService, row.rawDisplayName) : true
+    );
+}
+
+function getTopLabel(top, hasSelectionFilter) {
+  return !hasSelectionFilter && Number.isFinite(top) && top > 0 ? `Top ${top}` : "All";
+}
+
+function buildServiceTotalRows(items) {
+  const totals = new Map();
+  for (const item of items) {
+    const service = item.service || "(unknown)";
+    const currency = normalizeCurrency(item.currency);
+    const key = JSON.stringify([service, currency]);
+    const current = totals.get(key) || { service, currency, amount: 0 };
+    current.amount += Number(item.computedAmount || 0);
+    totals.set(key, current);
+  }
+
+  return Array.from(totals.values())
+    .filter(({ amount }) => amount !== 0)
+    .sort((a, b) => b.amount - a.amount)
+    .map(({ service, currency, amount }) => ({
+      kosten: formatMoney(amount, currency),
+      displayName: "",
+      service,
+    }));
 }
 
 async function main() {
@@ -416,50 +489,16 @@ async function main() {
     saveCache(args.cachePath, displayNameMap, tagMap);
   }
 
-  const detailedRows = items
-    .map((i) => {
-      const tags =
-        (needTagData &&
-          i.resourceId &&
-          tagStringMap.get(i.resourceId) !== NO_TAGS &&
-          tagStringMap.get(i.resourceId)) ||
-        (needTagData ? formatTags(i) : "");
-      const nameFromSearch = i.resourceId ? displayNameMap.get(i.resourceId) : null;
-      const displayName =
-        i.resourceName ||
-        nameFromSearch ||
-        (isObjectStorageService(i.service) && i.resourceId
-          ? i.resourceId
-          : "(name not found)");
-      const displayNameWithStatus =
-        i.resourceId && deletedResourceIds.has(i.resourceId)
-          ? `${displayName} (deleted)`
-          : displayName;
-      return {
-        amount: Number(i.computedAmount || 0),
-        currency: normalizeCurrency(i.currency),
-        service: inferServiceName(i.service || "", displayNameWithStatus, i.resourceId),
-        rawDisplayName: displayName,
-        displayName: truncateDisplayName(displayNameWithStatus),
-        tags,
-      };
-    })
-    .filter((r) => r.amount !== 0)
-    .filter((r) => (useTagFilter ? tagMatches(r.tags, wantedTag) : true))
-    .filter((r) =>
-      useServiceFilter ? serviceMatches(r.service, wantedService, r.rawDisplayName) : true
-    );
+  const detailedRows = buildDetailedRows(items, {
+    needTagData,
+    tagStringMap,
+    displayNameMap,
+    deletedResourceIds,
+    wantedTag,
+    wantedService,
+  });
 
-  const rows = detailedRows
-    .sort((a, b) => b.amount - a.amount)
-    .slice(
-      0,
-      useTagFilter
-        ? undefined
-        : Number.isFinite(args.top) && args.top > 0
-          ? args.top
-          : undefined
-    )
+  const rows = selectDetailRows(detailedRows, args.top, useSelectionFilter)
     .map((r) => {
       const row = {
         kosten: formatMoney(r.amount, r.currency),
@@ -485,14 +524,10 @@ async function main() {
   }
 
   const totalsByCurrency = new Map();
-  const totalsByServiceCurrency = new Map();
   for (const i of items) {
     const currency = normalizeCurrency(i.currency);
     const amount = Number(i.computedAmount || 0);
     totalsByCurrency.set(currency, (totalsByCurrency.get(currency) || 0) + amount);
-    const service = i.service || "(unknown)";
-    const key = `${service}|||${currency}`;
-    totalsByServiceCurrency.set(key, (totalsByServiceCurrency.get(key) || 0) + amount);
   }
 
   const totalRows = Array.from(totalsByCurrency.entries())
@@ -528,25 +563,9 @@ async function main() {
     : [];
 
   const rowsWithTotal = rows.concat(filteredTotalRows, totalRows);
-  const totalsByService = new Map();
-  for (const [key, amount] of totalsByServiceCurrency.entries()) {
-    const [service] = key.split("|||");
-    totalsByService.set(service, (totalsByService.get(service) || 0) + amount);
-  }
+  const serviceTotalsRows = buildServiceTotalRows(items);
 
-  const serviceTotalsRows = Array.from(totalsByService.entries())
-    .filter(([, amount]) => amount !== 0)
-    .map(([service, amount]) => ({
-      amount,
-      kosten: formatMoney(amount, DEFAULT_CURRENCY),
-      displayName: "",
-      service,
-    }))
-    .sort((a, b) => b.amount - a.amount)
-    .map(({ amount, ...rest }) => rest);
-
-  const topLabel =
-    Number.isFinite(args.top) && args.top > 0 ? `Top ${args.top}` : "All";
+  const topLabel = getTopLabel(args.top, useSelectionFilter);
   const periodLine = `Period: ${toIso(start)} to ${toIso(end)} (${topLabel})`;
 
   if (args.csv || args.csvFile) {
@@ -571,7 +590,19 @@ async function main() {
   console.log(renderTable(serviceTotalsRows));
 }
 
-main().catch((err) => {
-  console.error("Error:", err?.message || err);
-  process.exit(1);
-});
+if (require.main === module) {
+  main().catch((err) => {
+    console.error("Error:", err?.message || err);
+    process.exit(1);
+  });
+}
+
+module.exports = {
+  buildDetailedRows,
+  buildServiceTotalRows,
+  formatTags,
+  getTopLabel,
+  inferServiceName,
+  normalizeCurrency,
+  tagMatches,
+};

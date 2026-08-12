@@ -3,8 +3,11 @@
 const fs = require("fs");
 
 function csvEscape(value) {
-  const s = String(value ?? "");
-  if (s.includes("\"") || s.includes(",") || s.includes("\n")) {
+  let s = String(value ?? "");
+  if (/^[ \t\r\n]*[=+\-@]/.test(s)) {
+    s = `'${s}`;
+  }
+  if (s.includes("\"") || s.includes(",") || /[\r\n]/.test(s)) {
     return `"${s.replace(/\"/g, "\"\"")}"`;
   }
   return s;
@@ -64,4 +67,4 @@ function writeCsvAppend(rows, filePath, sectionLabel) {
   fs.appendFileSync(filePath, buildCsv(rows, null, sectionLabel), "utf8");
 }
 
-module.exports = { writeCsv, writeCsvFile, writeCsvAppend };
+module.exports = { writeCsv, writeCsvFile, writeCsvAppend, csvEscape };
