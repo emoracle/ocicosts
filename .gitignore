@@ -6,6 +6,8 @@ npm-debug.log*
 .vscode/
 .idea/
 *.log
+instructie.md
+resume.sh
 
 # OCI config (optioneel)
 .oci/
